@@ -22,8 +22,8 @@ OPNFV SFC demo for ONS
    This command 
    1. fetches the tacker credentials in `/home/opnfv/demo/basic/tackerc` and the ODL credentials in `/home/opnfv/demo/basic/odlrc`
    2. Creates `client` and `server` endpoints
-   3. Creates 2 chains, `blue` and `red` and two classifiers `red_http` and `red_ssh` that pass http and ssh traffic through the `red` chain  
-   You can also run these steps independently using the `fetch_creds.py`, `create_endpoints.py` and `create_chains.py` scripts.
+   3. Creates 2 chains, `blue` and `red` and two classifiers `red_http` and `red_ssh` that pass http and ssh traffic through the `red` chain
+   4. You can also run these steps independently using the `fetch_creds.py`, `create_endpoints.py` and `create_chains.py` scripts.
 4. Run the demo. You can use `change_classification.sh` script to modify the classification rules so that the traffic goes through the `blue` chain
 5. When done, clean everything up with
    ```
