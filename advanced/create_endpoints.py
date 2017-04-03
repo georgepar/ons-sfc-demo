@@ -18,10 +18,10 @@ FLAVOR = "custom"
 RAM_SIZE_IN_MB = "1500"
 DISK_SIZE_IN_GB = "10"
 VCPU_COUNT = "1"
-IMAGE_NAME = "sfc_nsh_danube"
-IMAGE_FILE_NAME = "sfc_nsh_danube.qcow2"
+IMAGE_NAME = "sf_nsh_vnc_sparse"
+IMAGE_FILE_NAME = "sf_nsh_vnc_sparse.qcow2"
 IMAGE_FORMAT = "qcow2"
-IMAGE_URL = "http://artifacts.opnfv.org/sfc/images"
+IMAGE_URL = "https://www.dropbox.com/s/w3rtdwqm02xkqj6/"
 DIR_FUNCTEST_DATA = ft_utils.get_functest_config(
     "general.dir.functest_data")
 IMAGE_PATH = os.path.join(

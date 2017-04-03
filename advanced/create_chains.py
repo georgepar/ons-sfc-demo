@@ -11,6 +11,7 @@
 import os
 import re
 import sys
+import time
 import threading
 
 import functest.utils.functest_logger as ft_logger
@@ -120,16 +121,6 @@ def main():
     logger.info(test_utils.run_cmd('tacker sfc-list')[1])
     logger.info(test_utils.run_cmd('tacker sfc-classifier-list')[1])
 
-    # Start measuring the time it takes to implement the classification rules
-    t1 = threading.Thread(target=test_utils.wait_for_classification_rules,
-                          args=(ovs_logger, compute_nodes, odl_ip, odl_port,
-                                testTopology,))
-
-    try:
-        t1.start()
-    except Exception, e:
-        logger.error("Unable to start the thread that counts time %s" % e)
-
     sf_floating_ip = test_utils.assign_floating_ip(
         nova_client, neutron_client, vnf_instance_id)
 
@@ -146,20 +137,14 @@ def main():
 
     logger.info("Firewall started, blocking traffic port 80")
     test_utils.vxlan_firewall(sf_floating_ip, port=80)
+    cmd = "python vxlan_tool.py --metadata -i eth0 -d forward -v off -b 80"
+
+    cmd = "sh -c 'cd /root;nohup " + cmd + " > /dev/null 2>&1 &'"
+    test_utils.run_cmd_remote(sf_floating_ip, cmd)
+    time.sleep(7)
 
     logger.info("Wait for ODL to update the classification rules in OVS")
-    t1.join()
-
-    for compute_node in compute_nodes:
-        compute_ssh = compute_node.ssh_client
-        match_rsp = re.compile(
-            r'.+tp_dst=80.+load:(0x[0-9a-f]+)->NXM_NX_NSP\[0\.\.23\].+')
-        # First line is OFPST_FLOW reply (OF1.3) (xid=0x2):
-        # This is not a flow so ignore
-        flows = (ovs_logger.ofctl_dump_flows(compute_ssh, 'br-int', '11')
-                 .strip().split('\n')[1:])
-        matching_flows = [match_rsp.match(f) for f in flows]
-        logger.info(matching_flows)
+    time.sleep(10)
 
     rsps = test_utils.get_odl_resource_list(
         odl_ip, odl_port, 'rendered-service-path', datastore='operational')
@@ -167,7 +152,9 @@ def main():
         rsp['path-id']
         for rsp in rsps['rendered-service-paths']['rendered-service-path']
         if rsp['name'].endswith('Reverse'))
-    reverse_path_action = "load:{0}->NXM_NX_NSH_C3[]".format(reverse_path_id)
+    hex_path_id = hex(int(reverse_path_id))
+    reverse_path_action = "load:{0}->NXM_NX_NSH_C3[]".format(hex_path_id)
+
 
     for compute_node in compute_nodes:
         compute_ssh = compute_node.ssh_client
@@ -183,8 +170,19 @@ def main():
         uplink_flow = [f.group(0) for f in matching_flows if f is not None][0]
         actions = uplink_flow.split("actions=")[1]
         actions_c3 = "{0},{1}".format(reverse_path_action, actions)
-        compute_node.run_cmd("ovs-ofctl -OOpenflow13 mod-flows br-int \"table=11,tcp,reg0=0x1,tp_dst=80,actions={0}\"".format(actions_c3))
-        logger.info(actions_c3)
+        cmd = "ovs-ofctl -OOpenflow13 mod-flows br-int \"table=11,tcp,reg0=0x1,tp_dst=80,actions={0}\"".format(actions_c3)
+        #compute_node.run_cmd(cmd)
+        logger.info("Running: {0}".format(cmd))
+        match_port = re.compile(
+            r'.+table=158.+output:([0-9]+)')
+        flows = (ovs_logger.ofctl_dump_flows(compute_ssh, 'br-int', '158').strip().split('\n')[1:])
+        matching_flows = [match_port.match(f) for f in flows]
+        sf_port = [f.group(1) for f in matching_flows if f is not None][0]
+        cmd = "ovs-ofctl -O Openflow13 add-flow br-int \"table=11,nsi=254,nsp={0} actions=load:0x1->NXM_NX_REG0[],move:NXM_NX_NSH_C2[]->NXM_NX_TUN_ID[0..31],resubmit({1},1)\"".format(reverse_path_id, sf_port)
+        #compute_node.run_cmd(cmd)
+        logger.info("Running: {0}".format(cmd))
+        cmd = "ovs-ofctl -O Openflow13 add-flow br-int \"table=1, priority=40000,nsi=254,nsp={0},reg0=0x1,in_port={1} actions=pop_nsh,goto_table:21\"".format(reverse_path_id, sf_port)
+        logger.info("Running: {0}".format(cmd))
 
     logger.info("HTTP traffic from client to server should be blocked")
     logger.info("When trying to send HTTP traffic to server it should respond with TCP RESET")
