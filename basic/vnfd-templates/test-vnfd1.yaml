@@ -10,7 +10,7 @@ service_properties:
 vdus:
   vdu1:
     id: vdu1
-    vm_image: sfc_nsh_danube
+    vm_image: sf_nsh_vnc_sparse
     instance_type: custom
     service_type: firewall1
 
