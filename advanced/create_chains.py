@@ -34,7 +34,7 @@ INSTALLER = {
     "password": "r00tme",
     "cluster": "1"
 }
-DEMO_DIR = "/home/opnfv/demo/basic/"
+DEMO_DIR = "/home/opnfv/demo/advanced/"
 RESULTS_DIR = "/home/opnfv/functest/results/"
 VNFD_DIR = "vnfd-templates"
 VNFD_DEFAULT_PARAMS_FILE = "test-vnfd-default-params.yaml"
@@ -99,7 +99,7 @@ def main():
         if ('client' not in instance.name) and ('server' not in instance.name):
             os_utils.add_secgroup_to_instance(nova_client, instance.id, sg_id)
 
-    os_tacker.create_sfc(tacker_client, 'red', chain_vnf_names=['testVNF1'])
+    os_tacker.create_sfc(tacker_client, 'red', chain_vnf_names=['testVNF1'], symmetrical=True)
 
     os_tacker.create_sfc_classifier(
         tacker_client, 'red_http', sfc_name='red',
@@ -133,7 +133,7 @@ def main():
     sf_floating_ip = test_utils.assign_floating_ip(
         nova_client, neutron_client, vnf_instance_id)
 
-    for ip in (sf_floating_ip):
+    for ip in [sf_floating_ip]:
         logger.info("Checking connectivity towards floating IP [%s]" % ip)
         if not test_utils.ping(ip, retries=50, retry_timeout=1):
             logger.error("Cannot ping floating IP [%s]" % ip)
@@ -153,7 +153,7 @@ def main():
     for compute_node in compute_nodes:
         compute_ssh = compute_node.ssh_client
         match_rsp = re.compile(
-            r'.+tp_dst=([0-9]+).+load:(0x[0-9a-f]+)->NXM_NX_NSP\[0\.\.23\].+')
+            r'.+tp_dst=80.+load:(0x[0-9a-f]+)->NXM_NX_NSP\[0\.\.23\].+')
         # First line is OFPST_FLOW reply (OF1.3) (xid=0x2):
         # This is not a flow so ignore
         flows = (ovs_logger.ofctl_dump_flows(compute_ssh, 'br-int', '11')
@@ -161,7 +161,33 @@ def main():
         matching_flows = [match_rsp.match(f) for f in flows]
         logger.info(matching_flows)
 
-    logger.info("HTTP traffic from client to server should be accepted")
+    rsps = test_utils.get_odl_resource_list(
+        odl_ip, odl_port, 'rendered-service-path', datastore='operational')
+    reverse_path_id = next(
+        rsp['path-id']
+        for rsp in rsps['rendered-service-paths']['rendered-service-path']
+        if rsp['name'].endswith('Reverse'))
+    reverse_path_action = "load:{0}->NXM_NX_NSH_C3[]".format(reverse_path_id)
+
+    for compute_node in compute_nodes:
+        compute_ssh = compute_node.ssh_client
+        match_rsp = re.compile(
+            r'.+tp_dst=80.+load:(0x[0-9a-f]+)->NXM_NX_NSP\[0\.\.23\].+')
+        # First line is OFPST_FLOW reply (OF1.3) (xid=0x2):
+        # This is not a flow so ignore
+        flows = (ovs_logger.ofctl_dump_flows(compute_ssh, 'br-int', '11')
+                 .strip().split('\n')[1:])
+        matching_flows = [match_rsp.match(f) for f in flows]
+        if all(m is None for m in matching_flows):
+            break
+        uplink_flow = [f.group(0) for f in matching_flows if f is not None][0]
+        actions = uplink_flow.split("actions=")[1]
+        actions_c3 = "{0},{1}".format(reverse_path_action, actions)
+        compute_node.run_cmd("ovs-ofctl -OOpenflow13 mod-flows br-int \"table=11,tcp,reg0=0x1,tp_dst=80,actions={0}\"".format(actions_c3))
+        logger.info(actions_c3)
+
+    logger.info("HTTP traffic from client to server should be blocked")
+    logger.info("When trying to send HTTP traffic to server it should respond with TCP RESET")
 
 
 if __name__ == '__main__':

@@ -17,7 +17,7 @@ INSTALLER = {
     "cluster": "1"
 }
 
-RC_FILE = "/home/opnfv/demo/basic/tackerc"
+RC_FILE = "/home/opnfv/demo/advanced/tackerc"
 
 
 def fetch_tackerc_file(controller_node):
